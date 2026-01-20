@@ -1,0 +1,21 @@
+# Entornos virtuales
+venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Archivos grandes / media
+media/
+
+# Logs
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

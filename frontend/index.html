@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Mi Streaming Local</title>
+
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    
+
+    <style>
+        #layout {
+            display: flex;
+            gap: 20px;
+        }
+
+        #player {
+            width: 70%;
+            height: 70vh;
+            background: black;
+            object-fit: contain;
+            display: block;
+        }
+
+        #video-list {
+            width: 30%;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            overflow-y: auto;
+            max-height: 70vh;
+        }
+
+        #video-list li {
+            padding: 8px;
+            cursor: pointer;
+        }
+
+        #video-list li.active {
+            font-weight: bold;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Mi streaming local</h1>
+
+    <div id="layout">
+        <video id="player" controls></video>
+        <ul id="video-list"></ul>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
