@@ -19,3 +19,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Videos / media
+media/
+backend/videos/
