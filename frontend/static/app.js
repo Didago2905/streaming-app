@@ -1,25 +1,32 @@
+console.log("🔥 app.js CARGADO (versión limpia y estable)");
+
 const player = document.getElementById("player");
+const videoList = document.getElementById("video-list");
 
 let currentVideoId = null;
-let finished = false;
+
+player.addEventListener("ended", () => {
+  console.log("🔥 EVENTO ENDED NATIVO DISPARADO");
+});
 
 /* ==========================
    CARGAR LISTADO DE VIDEOS
 ========================== */
 
 fetch("/postings")
-  .then(response => response.json())
+  .then(res => res.json())
   .then(data => {
-    const list = document.getElementById("video-list");
-
     data.postings.forEach(video => {
       const li = document.createElement("li");
       li.textContent = video.title;
       li.style.cursor = "pointer";
 
       li.addEventListener("click", () => {
-        finished = false;
         currentVideoId = video.id;
+
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
 
         player.src = `/postings/${video.id}/stream`;
 
@@ -32,127 +39,54 @@ fetch("/postings")
 
         document
           .querySelectorAll("#video-list li")
-          .forEach(item => item.classList.remove("active"));
+          .forEach(el => el.classList.remove("active"));
 
         li.classList.add("active");
       });
 
-      list.appendChild(li);
+      videoList.appendChild(li);
     });
-  })
-  .catch(err => {
-    console.error("Error cargando postings:", err);
   });
 
 /* ==========================
-   GUARDAR PROGRESO
+   TIMEUPDATE ÚNICO
+   - guarda progreso
+   - detecta fin real
 ========================== */
+
+let finishTimeout = null;
 
 player.addEventListener("timeupdate", () => {
   if (!currentVideoId) return;
+  if (!Number.isFinite(player.duration)) return;
 
+  // 💾 Guardar progreso
   localStorage.setItem(
     `video-time-${currentVideoId}`,
     player.currentTime
   );
 
-  // 🔹 Caso 1: duración conocida
-  if (!finished && Number.isFinite(player.duration)) {
-    const remaining = player.duration - player.currentTime;
-    if (remaining <= 1) {
-      finished = true;
-      onVideoFinished();
-    }
+  // 🎬 Detectar fin real
+  const remaining = player.duration - player.currentTime;
+
+  if (remaining <= 0.3 && !finishTimeout) {
+    finishTimeout = setTimeout(() => {
+      console.log("🎬 VIDEO TERMINADO (frontend):", currentVideoId);
+
+      fetch("/video-ended", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_id: currentVideoId })
+      });
+    }, 500);
+  }
+
+  // ↩️ Si el usuario se mueve, cancelamos
+  if (remaining > 0.5 && finishTimeout) {
+    clearTimeout(finishTimeout);
+    finishTimeout = null;
   }
 });
 
-/* ==========================
-   DETECCIÓN AL PAUSAR (streaming)
-========================== */
-
-player.addEventListener("pause", () => {
-  if (finished || !currentVideoId) return;
-
-  try {
-    if (player.buffered.length > 0) {
-      const bufferedEnd = player.buffered.end(0);
-      if (player.currentTime >= bufferedEnd - 1) {
-        finished = true;
-        onVideoFinished();
-      }
-    }
-  } catch (_) {
-    // silencioso a propósito
-  }
-});
-
-/* ==========================
-   FIN DEL VIDEO
-========================== */
-
-function onVideoFinished() {
-  notifyBackendVideoEnded();
-}
-
-/* ==========================
-   NOTIFICAR BACKEND
-========================== */
-
-function notifyBackendVideoEnded() {
-  fetch("/video-ended", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      video_id: currentVideoId,
-      completed: true
-    })
-  });
-}
 
 
-player.addEventListener("stalled", () => {
-  console.log("⛔ stalled fired", player.currentTime);
-  if (!currentVideoId || finished) return;
-
-  // si se estanca cerca del final varias veces, es fin real
-  if (Math.abs(player.currentTime - lastTime) < 0.1) {
-    stallCount += 1;
-  } else {
-    stallCount = 0;
-  }
-
-  lastTime = player.currentTime;
-
-  // 2–3 stalls seguidos cerca del final = terminó
-  if (stallCount >= 2 && player.currentTime > 1 && !finished) {
-    finished = true;
-    onVideoFinished();
-  }
-});
-
-function onVideoFinished() {
-  console.log("🎬 VIDEO TERMINADO:", currentVideoId);
-  notifyBackendVideoEnded();
-}
-
-let lastTime = 0;
-let sameTimeCount = 0;
-
-setInterval(() => {
-  if (!currentVideoId || finished) return;
-
-  // si el tiempo no avanza
-  if (Math.abs(player.currentTime - lastTime) < 0.2) {
-    sameTimeCount++;
-  } else {
-    sameTimeCount = 0;
-  }
-
-  lastTime = player.currentTime;
-
-  // 3 ciclos (~1.5s) sin avance = terminó
-  if (sameTimeCount >= 5 && player.currentTime > 1) {
-    finished = true;
-    onVideoFinished();
-  }
-}, 500);
