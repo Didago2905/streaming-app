@@ -23,3 +23,6 @@ Thumbs.db
 # Videos / media
 media/
 backend/videos/
+
+# Carpetas de pruebas
+backend/app/playground/

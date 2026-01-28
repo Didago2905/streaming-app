@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <title>Mi Streaming Local</title>
 
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
-    
+
 
     <style>
         #layout {
@@ -39,6 +40,38 @@
             font-weight: bold;
             text-decoration: underline;
         }
+
+        #end-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .end-box {
+            background: #111;
+            padding: 24px 32px;
+            border-radius: 12px;
+            text-align: center;
+            color: white;
+            min-width: 260px;
+        }
+
+        .end-box h2 {
+            margin-bottom: 16px;
+        }
+
+        .end-box button {
+            display: block;
+            width: 100%;
+            margin: 8px 0;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -52,4 +85,5 @@
 
     <script src="/static/app.js"></script>
 </body>
+
 </html>
