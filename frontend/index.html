@@ -36,10 +36,19 @@
             cursor: pointer;
         }
 
-        #video-list li.active {
+        /* ▶ Episodio en reproducción */
+        #video-list li.playing {
             font-weight: bold;
-            text-decoration: underline;
+            color: #4ade80;
+            /* verde suave */
         }
+
+        /* ✔ Último episodio visto */
+        #video-list li.last-watched {
+            text-decoration: underline;
+            opacity: 0.7;
+        }
+
 
         #end-overlay {
             position: fixed;

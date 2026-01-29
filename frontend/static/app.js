@@ -2,58 +2,253 @@ console.log("🔥 app.js CARGADO");
 
 document.addEventListener("DOMContentLoaded", () => {
 
+  /* ==========================
+     STATE HELPERS
+  ========================== */
+
+  function getLastEpisodeKey() {
+    return `last-episode-${currentSerie}-${currentSeason}`;
+  }
+
+  function getProgressKey(videoId) {
+    return `video-time-${videoId}`;
+  }
+
+  /* ==========================
+     ESTADO GLOBAL
+  ========================== */
+
   let playlist = [];
   let currentIndex = -1;
   let currentVideoId = null;
+
+  let libraryData = null;
+  let navMode = "series";
+  let currentSerie = null;
+  let currentSeason = null;
+
+  let lastProgressSave = 0;
+  let finishTimeout = null;
 
   const player = document.getElementById("player");
   const videoList = document.getElementById("video-list");
 
   if (!player || !videoList) {
-    console.error("❌ player o video-list no encontrados en el DOM");
+    console.error("❌ player o video-list no encontrados");
     return;
   }
 
   /* ==========================
-     CARGAR BIBLIOTECA (/library)
+     CARGAR BIBLIOTECA
   ========================== */
 
   fetch("/library")
-    .then(res => {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    })
+    .then(res => res.json())
     .then(library => {
-      console.log("📚 Biblioteca cargada:", library);
-
-      const SERIE = "The Big Bang Theory"; // por ahora fija
-      playlist = buildPlaylistFromLibrary(library, SERIE);
-
-      console.log("🎬 Playlist generada:", playlist);
-
-      renderPlaylist();
+      libraryData = library;
+      renderSeries();
     })
-    .catch(err => {
-      console.error("❌ Error cargando library:", err);
-    });
+    .catch(err => console.error("❌ Error cargando library:", err));
 
   /* ==========================
-     RENDER PLAYLIST
+     UI HELPERS
+  ========================== */
+
+  function renderBackButton(onClick) {
+    const li = document.createElement("li");
+    li.textContent = "⬅ Volver";
+    li.style.fontWeight = "bold";
+    li.style.cursor = "pointer";
+    li.onclick = onClick;
+    videoList.appendChild(li);
+  }
+
+  function renderContextHeader(text) {
+    const li = document.createElement("li");
+    li.textContent = `📂 ${text}`;
+    li.style.opacity = "0.7";
+    li.style.pointerEvents = "none";
+    videoList.appendChild(li);
+  }
+
+  function renderSeparator() {
+    const li = document.createElement("li");
+    li.textContent = "──────────";
+    li.style.opacity = "0.3";
+    li.style.pointerEvents = "none";
+    videoList.appendChild(li);
+  }
+
+  function exitFullscreenIfNeeded() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => { });
+    }
+  }
+
+  /* ==========================
+     OVERLAY FIN DE TEMPORADA
+  ========================== */
+
+  function showEndOfSeasonOverlay() {
+    if (document.getElementById("end-overlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "end-overlay";
+
+    const seasons = Object.keys(libraryData[currentSerie]).sort();
+    const currentSeasonIndex = seasons.indexOf(currentSeason);
+    const hasNextSeason = currentSeasonIndex < seasons.length - 1;
+    let autoNextSeasonTimeout = null;
+
+
+    overlay.innerHTML = `
+      <div class="end-box">
+        <h2>Fin de la temporada</h2>
+
+        <button id="restart-btn">🔁 Reiniciar temporada</button>
+        <button id="random-btn">🎲 Episodio random</button>
+        ${hasNextSeason ? `<button id="next-season-btn">⏭️ Temporada siguiente</button>` : ""}
+        <button id="stop-btn">⏹️ Detener</button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // ⏱️ Autoplay automático a la siguiente temporada (10s)
+    if (hasNextSeason) {
+      autoNextSeasonTimeout = setTimeout(() => {
+        document.body.removeChild(overlay);
+
+        currentSeason = seasons[currentSeasonIndex + 1];
+        currentIndex = -1;
+
+        renderEpisodes();
+        playVideoByIndex(0);
+      }, 10000);
+    }
+
+
+    document.getElementById("restart-btn").onclick = () => {
+      // 🛑 detener autoplay automático
+      if (autoNextSeasonTimeout) {
+        clearTimeout(autoNextSeasonTimeout);
+        autoNextSeasonTimeout = null;
+      }
+      document.body.removeChild(overlay);
+      playVideoByIndex(0);
+    };
+
+    document.getElementById("random-btn").onclick = () => {
+      document.body.removeChild(overlay);
+      playVideoByIndex(Math.floor(Math.random() * playlist.length));
+    };
+
+    if (hasNextSeason) {
+      document.getElementById("next-season-btn").onclick = () => {
+        document.body.removeChild(overlay);
+        currentSeason = seasons[currentSeasonIndex + 1];
+        currentIndex = -1;
+        renderEpisodes();
+        playVideoByIndex(0);
+      };
+    }
+
+    document.getElementById("stop-btn").onclick = () => {
+      document.body.removeChild(overlay);
+      player.pause();
+      player.currentTime = 0;
+    };
+  }
+
+  /* ==========================
+     NAVEGACIÓN
+  ========================== */
+
+  function renderSeries() {
+    navMode = "series";
+    videoList.innerHTML = "";
+
+    Object.keys(libraryData).forEach(serie => {
+      const li = document.createElement("li");
+      li.textContent = "📁 " + serie;
+      li.style.cursor = "pointer";
+      li.onclick = () => {
+        currentSerie = serie;
+        renderSeasons();
+      };
+      videoList.appendChild(li);
+    });
+  }
+
+  function renderSeasons() {
+    navMode = "seasons";
+    videoList.innerHTML = "";
+
+    renderBackButton(() => renderSeries());
+
+    Object.keys(libraryData[currentSerie]).forEach(season => {
+      const li = document.createElement("li");
+      li.textContent = "📁 " + season;
+      li.style.cursor = "pointer";
+      li.onclick = () => {
+        currentSeason = season;
+        currentIndex = -1;
+        renderEpisodes();
+      };
+      videoList.appendChild(li);
+    });
+  }
+
+  function renderEpisodes() {
+    navMode = "episodes";
+    videoList.innerHTML = "";
+
+    renderBackButton(() => renderSeasons());
+    renderContextHeader(currentSerie);
+    renderContextHeader(currentSeason);
+    renderSeparator();
+
+    const episodesContainer = document.createElement("div");
+    episodesContainer.id = "episodes-container";
+    videoList.appendChild(episodesContainer);
+
+    playlist = libraryData[currentSerie][currentSeason].map(ep => ({
+      id: ep.path,
+      path: ep.path,
+      title: `${currentSeason} · Episodio ${ep.episode}`
+    }));
+
+    renderPlaylist();
+  }
+
+  /* ==========================
+     PLAYLIST
   ========================== */
 
   function renderPlaylist() {
-    videoList.innerHTML = "";
+    const container = document.getElementById("episodes-container");
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    const lastWatchedIndex = localStorage.getItem(getLastEpisodeKey());
 
     playlist.forEach((video, index) => {
       const li = document.createElement("li");
-      li.textContent = video.title;
+      li.textContent = "🎬 " + video.title;
       li.style.cursor = "pointer";
 
-      li.addEventListener("click", () => {
-        playVideoByIndex(index);
-      });
+      if (lastWatchedIndex !== null && index === Number(lastWatchedIndex)) {
+        li.classList.add("last-watched");
+      }
 
-      videoList.appendChild(li);
+      if (index === currentIndex) {
+        li.classList.add("playing");
+        li.classList.remove("last-watched");
+      }
+
+      li.onclick = () => playVideoByIndex(index);
+      container.appendChild(li);
     });
   }
 
@@ -68,62 +263,56 @@ document.addEventListener("DOMContentLoaded", () => {
     currentIndex = index;
     currentVideoId = video.id;
 
-    console.log("▶️ Reproduciendo:", video);
-
-    player.pause();
-    player.removeAttribute("src");
-    player.load();
+    // ✔ Guardar último episodio visto
+    localStorage.setItem(getLastEpisodeKey(), index);
 
     player.src = `/media/${video.path}`;
+    player.load();
 
-    const savedTime = localStorage.getItem(`video-time-${currentVideoId}`);
+    const savedTime = localStorage.getItem(getProgressKey(currentVideoId));
     if (savedTime) {
       player.currentTime = parseFloat(savedTime);
     }
 
     player.play();
-
-    document
-      .querySelectorAll("#video-list li")
-      .forEach(el => el.classList.remove("active"));
-
-    const lis = document.querySelectorAll("#video-list li");
-    if (lis[index]) lis[index].classList.add("active");
+    renderPlaylist();
   }
 
   /* ==========================
      AUTOPLAY + PROGRESO
   ========================== */
 
-  let finishTimeout = null;
-
   player.addEventListener("timeupdate", () => {
-    if (!currentVideoId) return;
-    if (!Number.isFinite(player.duration)) return;
-
-    localStorage.setItem(
-      `video-time-${currentVideoId}`,
-      player.currentTime
-    );
+    if (!currentVideoId || !Number.isFinite(player.duration)) return;
 
     const remaining = player.duration - player.currentTime;
+    const now = Date.now();
 
+    // 💾 Guardar progreso cada 5s
+    if (remaining > 1 && now - lastProgressSave > 5000) {
+      localStorage.setItem(
+        getProgressKey(currentVideoId),
+        player.currentTime
+      );
+      lastProgressSave = now;
+    }
+
+    // 🏁 Fin de episodio
     if (remaining <= 0.3 && !finishTimeout) {
       finishTimeout = setTimeout(() => {
-        console.log("🎬 VIDEO TERMINADO:", currentVideoId);
 
-        localStorage.removeItem(`video-time-${currentVideoId}`);
+        localStorage.removeItem(getProgressKey(currentVideoId));
         player.currentTime = 0;
 
         const nextIndex = currentIndex + 1;
 
         if (nextIndex < playlist.length) {
-          console.log("▶️ AUTOPLAY → siguiente episodio");
           playVideoByIndex(nextIndex);
         } else {
-          console.log("🏁 FIN DE LA LISTA");
-          showEndOfListOverlay();
+          exitFullscreenIfNeeded();
+          showEndOfSeasonOverlay();
         }
+
       }, 500);
     }
 
@@ -132,68 +321,5 @@ document.addEventListener("DOMContentLoaded", () => {
       finishTimeout = null;
     }
   });
-
-  /* ==========================
-     OVERLAY FIN DE LISTA
-  ========================== */
-
-  function showEndOfListOverlay() {
-    if (document.getElementById("end-overlay")) return;
-
-    const overlay = document.createElement("div");
-    overlay.id = "end-overlay";
-
-    overlay.innerHTML = `
-      <div class="end-box">
-        <h2>Fin de la lista</h2>
-        <button id="restart-btn">🔁 Volver al inicio</button>
-        <button id="random-btn">🎲 Reproducir algo</button>
-        <button id="stop-btn">⏹️ Detener</button>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    document.getElementById("restart-btn").onclick = () => {
-      document.body.removeChild(overlay);
-      playVideoByIndex(0);
-    };
-
-    document.getElementById("random-btn").onclick = () => {
-      document.body.removeChild(overlay);
-      const randomIndex = Math.floor(Math.random() * playlist.length);
-      playVideoByIndex(randomIndex);
-    };
-
-    document.getElementById("stop-btn").onclick = () => {
-      document.body.removeChild(overlay);
-      player.pause();
-      player.currentTime = 0;
-    };
-  }
-
-  /* ==========================
-     UTIL: BUILD PLAYLIST
-  ========================== */
-
-  function buildPlaylistFromLibrary(library, serieName) {
-    const list = [];
-    const seasons = library[serieName];
-    if (!seasons) return list;
-
-    Object.keys(seasons)
-      .sort()
-      .forEach(seasonName => {
-        seasons[seasonName].forEach(ep => {
-          list.push({
-            id: ep.path,        // ID interno
-            path: ep.path,      // ruta real
-            title: `${seasonName} · Episodio ${ep.episode}`
-          });
-        });
-      });
-
-    return list;
-  }
 
 });
