@@ -10,6 +10,32 @@ SERIES_ROOT = MEDIA_ROOT / "Series"
 SUPPORTED_EXTENSIONS = {".mp4"}
 
 
+def find_cover(directory: Path) -> str | None:
+    """
+    Busca un archivo de cover dentro del directorio.
+    Acepta nombres tipo:
+      - cover.jpg
+      - cover-dark.jpeg
+      - cover_01.png
+    """
+    if not directory.exists():
+        return None
+
+    for file in directory.iterdir():
+        if not file.is_file():
+            continue
+
+        if not file.stem.lower().startswith("cover"):
+            continue
+
+        if file.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+            continue
+
+        return file.name
+
+    return None
+
+
 @router.get("/library")
 def get_library():
     library = {}
@@ -22,7 +48,12 @@ def get_library():
             continue
 
         serie_name = serie_dir.name
-        library[serie_name] = {}
+        cover_file = find_cover(serie_dir)
+
+        library[serie_name] = {
+            "cover": f"Series/{serie_name}/{cover_file}" if cover_file else None,
+            "seasons": {},
+        }
 
         for season_dir in sorted(serie_dir.iterdir()):
             if not season_dir.is_dir():
@@ -41,14 +72,13 @@ def get_library():
                 episodes.append(
                     {
                         "episode": episode_number,
-                        # 🔑 RUTA RELATIVA A /media
                         "path": video.relative_to(MEDIA_ROOT).as_posix(),
                     }
                 )
 
             if episodes:
                 episodes.sort(key=lambda e: e["episode"])
-                library[serie_name][season_dir.name] = episodes
+                library[serie_name]["seasons"][season_dir.name] = episodes
 
     return library
 

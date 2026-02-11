@@ -168,17 +168,49 @@ document.addEventListener("DOMContentLoaded", () => {
     navMode = "series";
     videoList.innerHTML = "";
 
+    const grid = document.createElement("div");
+    grid.id = "series-grid";
+    videoList.appendChild(grid);
+
     Object.keys(libraryData).forEach(serie => {
-      const li = document.createElement("li");
-      li.textContent = "📁 " + serie;
-      li.style.cursor = "pointer";
-      li.onclick = () => {
+      const card = document.createElement("div");
+      card.className = "series-card";
+
+      const img = document.createElement("img");
+      img.className = "series-cover";
+
+      const coverPath = libraryData[serie].cover;
+
+      if (coverPath) {
+        img.src = `/media/${coverPath}`;
+      }
+
+      img.onerror = () => {
+        img.remove();
+
+        const placeholder = document.createElement("div");
+        placeholder.className = "series-placeholder";
+        placeholder.textContent = serie[0].toUpperCase();
+        card.prepend(placeholder);
+      };
+
+      const title = document.createElement("div");
+      title.className = "series-title";
+      title.textContent = serie;
+
+      card.appendChild(img);
+      card.appendChild(title);
+
+      card.onclick = () => {
         currentSerie = serie;
         renderSeasons();
       };
-      videoList.appendChild(li);
+
+      grid.appendChild(card);
     });
   }
+
+
 
   function renderSeasons() {
     navMode = "seasons";
@@ -186,7 +218,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderBackButton(() => renderSeries());
 
-    Object.keys(libraryData[currentSerie]).forEach(season => {
+    Object.keys(libraryData[currentSerie].seasons).forEach(season => {
       const li = document.createElement("li");
       li.textContent = "📁 " + season;
       li.style.cursor = "pointer";
@@ -212,7 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
     episodesContainer.id = "episodes-container";
     videoList.appendChild(episodesContainer);
 
-    playlist = libraryData[currentSerie][currentSeason].map(ep => ({
+    playlist = libraryData[currentSerie].seasons[currentSeason].map(ep => ({
       id: ep.path,
       path: ep.path,
       title: `${currentSeason} · Episodio ${ep.episode}`
