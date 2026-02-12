@@ -6,12 +6,22 @@ document.addEventListener("DOMContentLoaded", () => {
      STATE HELPERS
   ========================== */
 
-  function getLastEpisodeKey() {
-    return `last-episode-${currentSerie}-${currentSeason}`;
+  function getLastEpisodeKey(serie, season) {
+    return `last-episode-${serie}-${season}`;
   }
+
 
   function getProgressKey(videoId) {
     return `video-time-${videoId}`;
+  }
+
+  // 🔄 Reinicia solo tiempos de reproducción (no historial)
+  function resetSeriesPlayback(serie) {
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith("video-time-") && key.includes(serie)) {
+        localStorage.removeItem(key);
+      }
+    });
   }
 
   /* ==========================
@@ -63,6 +73,61 @@ document.addEventListener("DOMContentLoaded", () => {
     videoList.appendChild(li);
   }
 
+  function renderSeasonsHeader() {
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.gap = "8px";
+    header.style.padding = "4px 8px";
+    header.style.fontWeight = "bold";
+
+    const back = document.createElement("span");
+    back.textContent = "⬅ Volver";
+    back.style.cursor = "pointer";
+    back.onclick = () => renderSeries();
+
+    const menu = document.createElement("span");
+    menu.textContent = "⋮";
+    menu.style.cursor = "pointer";
+
+    menu.onclick = () => {
+      const confirmReset = confirm(
+        `¿Reiniciar tiempos de reproducción de la serie "${currentSerie}"?\n\nEsto NO borrará historial ni estado visual.`
+      );
+
+      if (confirmReset) {
+        resetSeriesPlayback(currentSerie);
+        alert("Tiempos reiniciados.");
+      }
+    };
+
+    header.appendChild(back);
+    header.appendChild(menu);
+    videoList.appendChild(header);
+  }
+
+
+
+  function renderSeasonMenuButton() {
+    const li = document.createElement("li");
+    li.textContent = "⋮ Opciones";
+    li.style.fontWeight = "bold";
+    li.style.cursor = "pointer";
+
+    li.onclick = () => {
+      const confirmReset = confirm(
+        `¿Reiniciar tiempos de reproducción de la serie "${currentSerie}"?\n\nEsto NO borrará historial ni estado visual.`
+      );
+
+      if (confirmReset) {
+        resetSeriesPlayback(currentSerie);
+        alert("Tiempos reiniciados.");
+      }
+    };
+
+    videoList.appendChild(li);
+  }
+
   function renderContextHeader(text) {
     const li = document.createElement("li");
     li.textContent = `📂 ${text}`;
@@ -95,16 +160,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const overlay = document.createElement("div");
     overlay.id = "end-overlay";
 
-    const seasons = Object.keys(libraryData[currentSerie]).sort();
+    const seasons = Object.keys(libraryData[currentSerie].seasons).sort();
     const currentSeasonIndex = seasons.indexOf(currentSeason);
     const hasNextSeason = currentSeasonIndex < seasons.length - 1;
     let autoNextSeasonTimeout = null;
 
-
     overlay.innerHTML = `
       <div class="end-box">
         <h2>Fin de la temporada</h2>
-
         <button id="restart-btn">🔁 Reiniciar temporada</button>
         <button id="random-btn">🎲 Episodio random</button>
         ${hasNextSeason ? `<button id="next-season-btn">⏭️ Temporada siguiente</button>` : ""}
@@ -114,26 +177,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.body.appendChild(overlay);
 
-    // ⏱️ Autoplay automático a la siguiente temporada (10s)
     if (hasNextSeason) {
       autoNextSeasonTimeout = setTimeout(() => {
         document.body.removeChild(overlay);
-
         currentSeason = seasons[currentSeasonIndex + 1];
         currentIndex = -1;
-
         renderEpisodes();
         playVideoByIndex(0);
       }, 10000);
     }
 
-
     document.getElementById("restart-btn").onclick = () => {
-      // 🛑 detener autoplay automático
-      if (autoNextSeasonTimeout) {
-        clearTimeout(autoNextSeasonTimeout);
-        autoNextSeasonTimeout = null;
-      }
+      if (autoNextSeasonTimeout) clearTimeout(autoNextSeasonTimeout);
       document.body.removeChild(overlay);
       playVideoByIndex(0);
     };
@@ -180,14 +235,10 @@ document.addEventListener("DOMContentLoaded", () => {
       img.className = "series-cover";
 
       const coverPath = libraryData[serie].cover;
-
-      if (coverPath) {
-        img.src = `/media/${coverPath}`;
-      }
+      if (coverPath) img.src = `/media/${coverPath}`;
 
       img.onerror = () => {
         img.remove();
-
         const placeholder = document.createElement("div");
         placeholder.className = "series-placeholder";
         placeholder.textContent = serie[0].toUpperCase();
@@ -210,25 +261,49 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-
-
   function renderSeasons() {
     navMode = "seasons";
     videoList.innerHTML = "";
 
-    renderBackButton(() => renderSeries());
+    const savedSeason = localStorage.getItem(`last-season-${currentSerie}`);
+    if (savedSeason && libraryData[currentSerie].seasons[savedSeason]) {
+      currentSeason = savedSeason;
+    }
+
+    let activeSeasonElement = null;
+
+    renderSeasonsHeader();
+    renderContextHeader(currentSerie);
+    renderSeparator();
 
     Object.keys(libraryData[currentSerie].seasons).forEach(season => {
       const li = document.createElement("li");
       li.textContent = "📁 " + season;
       li.style.cursor = "pointer";
+
+      if (season === savedSeason) {
+        li.classList.add("active-season");
+        activeSeasonElement = li;
+      }
+
       li.onclick = () => {
         currentSeason = season;
+        localStorage.setItem(`last-season-${currentSerie}`, season);
         currentIndex = -1;
         renderEpisodes();
       };
+
       videoList.appendChild(li);
     });
+
+    if (activeSeasonElement) {
+      setTimeout(() => {
+        activeSeasonElement.scrollIntoView({
+          behavior: "smooth",
+          block: "center"
+        });
+      }, 50);
+    }
   }
 
   function renderEpisodes() {
@@ -250,12 +325,20 @@ document.addEventListener("DOMContentLoaded", () => {
       title: `${currentSeason} · Episodio ${ep.episode}`
     }));
 
+    // 🔥 RESTAURAR índice guardado
+    const savedIndex = localStorage.getItem(
+      getLastEpisodeKey(currentSerie, currentSeason)
+    );
+
+    if (savedIndex !== null) {
+      currentIndex = Number(savedIndex);
+    } else {
+      currentIndex = -1;
+    }
+
     renderPlaylist();
   }
 
-  /* ==========================
-     PLAYLIST
-  ========================== */
 
   function renderPlaylist() {
     const container = document.getElementById("episodes-container");
@@ -263,20 +346,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     container.innerHTML = "";
 
-    const lastWatchedIndex = localStorage.getItem(getLastEpisodeKey());
+    const savedIndex = localStorage.getItem(
+      getLastEpisodeKey(currentSerie, currentSeason)
+    );
 
     playlist.forEach((video, index) => {
       const li = document.createElement("li");
       li.textContent = "🎬 " + video.title;
       li.style.cursor = "pointer";
 
-      if (lastWatchedIndex !== null && index === Number(lastWatchedIndex)) {
-        li.classList.add("last-watched");
-      }
-
       if (index === currentIndex) {
         li.classList.add("playing");
-        li.classList.remove("last-watched");
+      }
+      else if (savedIndex !== null && index === Number(savedIndex)) {
+        li.classList.add("last-watched");
+      }
+      else if (savedIndex !== null && index < Number(savedIndex)) {
+        li.classList.add("completed");
       }
 
       li.onclick = () => playVideoByIndex(index);
@@ -284,9 +370,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  /* ==========================
-     PLAY VIDEO
-  ========================== */
 
   function playVideoByIndex(index) {
     const video = playlist[index];
@@ -295,24 +378,21 @@ document.addEventListener("DOMContentLoaded", () => {
     currentIndex = index;
     currentVideoId = video.id;
 
-    // ✔ Guardar último episodio visto
-    localStorage.setItem(getLastEpisodeKey(), index);
+    localStorage.setItem(
+      getLastEpisodeKey(currentSerie, currentSeason),
+      index
+    );
+
 
     player.src = `/media/${video.path}`;
     player.load();
 
     const savedTime = localStorage.getItem(getProgressKey(currentVideoId));
-    if (savedTime) {
-      player.currentTime = parseFloat(savedTime);
-    }
+    if (savedTime) player.currentTime = parseFloat(savedTime);
 
     player.play();
     renderPlaylist();
   }
-
-  /* ==========================
-     AUTOPLAY + PROGRESO
-  ========================== */
 
   player.addEventListener("timeupdate", () => {
     if (!currentVideoId || !Number.isFinite(player.duration)) return;
@@ -320,31 +400,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const remaining = player.duration - player.currentTime;
     const now = Date.now();
 
-    // 💾 Guardar progreso cada 5s
     if (remaining > 1 && now - lastProgressSave > 5000) {
-      localStorage.setItem(
-        getProgressKey(currentVideoId),
-        player.currentTime
-      );
+      localStorage.setItem(getProgressKey(currentVideoId), player.currentTime);
       lastProgressSave = now;
     }
 
-    // 🏁 Fin de episodio
     if (remaining <= 0.3 && !finishTimeout) {
       finishTimeout = setTimeout(() => {
-
         localStorage.removeItem(getProgressKey(currentVideoId));
         player.currentTime = 0;
 
         const nextIndex = currentIndex + 1;
-
         if (nextIndex < playlist.length) {
           playVideoByIndex(nextIndex);
         } else {
           exitFullscreenIfNeeded();
           showEndOfSeasonOverlay();
         }
-
       }, 500);
     }
 
