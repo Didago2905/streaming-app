@@ -6,6 +6,7 @@ router = APIRouter()
 
 MEDIA_ROOT = Path(r"D:\Media")
 SERIES_ROOT = MEDIA_ROOT / "Series"
+MOVIES_ROOT = MEDIA_ROOT / "Movies"
 
 SUPPORTED_EXTENSIONS = {".mp4"}
 
@@ -81,6 +82,38 @@ def get_library():
                 library[serie_name]["seasons"][season_dir.name] = episodes
 
     return library
+
+
+@router.get("/movies")
+def get_movies():
+    movies = {}
+
+    if not MOVIES_ROOT.exists():
+        return movies
+
+    for movie_dir in sorted(MOVIES_ROOT.iterdir()):
+        if not movie_dir.is_dir():
+            continue
+
+        movie_name = movie_dir.name
+
+        # Buscar cover
+        cover_file = find_cover(movie_dir)
+
+        # Buscar archivo de video
+        movie_file = None
+        for file in movie_dir.iterdir():
+            if file.suffix.lower() in SUPPORTED_EXTENSIONS:
+                movie_file = file
+                break
+
+        if movie_file:
+            movies[movie_name] = {
+                "cover": f"Movies/{movie_name}/{cover_file}" if cover_file else None,
+                "path": movie_file.relative_to(MEDIA_ROOT).as_posix(),
+            }
+
+    return movies
 
 
 def extract_episode_number(filename: str) -> int | None:
