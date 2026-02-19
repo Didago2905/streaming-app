@@ -36,6 +36,32 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function resetSeasonProgress(serie, season) {
+
+    const seasonEpisodes = libraryData[serie].seasons[season];
+
+    seasonEpisodes.forEach(ep => {
+      localStorage.removeItem(getContentKey(ep.path));
+    });
+
+    localStorage.removeItem(getLastEpisodeKey(serie, season));
+    localStorage.removeItem(`last-season-${serie}`);
+
+    playlist = [];
+    currentVideoId = null;
+    currentIndex = -1;
+
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+  }
+
+
+
+
+
+
+
   function getContinueWatching() {
 
     const items = [];
@@ -52,7 +78,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Para películas y episodios:
       // Solo excluir si nunca se inició
-      if (state.progress === undefined || state.progress === null) return;
+      if (!state.progress || state.progress <= 0) return;
+
 
 
       const contentId = key.replace("content-", "");
@@ -65,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
         groupKey = parts[0] + "/" + parts[1]; // Series/Naruto
       } else {
         // Películas no se agrupan
-        groupKey = contentId;
+        groupKey = "movie-" + contentId;
       }
 
       if (!grouped[groupKey] || grouped[groupKey].lastAccess < state.lastAccess) {
@@ -163,15 +190,60 @@ document.addEventListener("DOMContentLoaded", () => {
     menu.style.padding = "0 6px";
 
     menu.onclick = () => {
-      const confirmReset = confirm(
-        `¿Reiniciar tiempos de reproducción de "${currentSerie}"?`
-      );
 
-      if (confirmReset) {
-        resetSeriesPlayback(currentSerie);
-        alert("Tiempos reiniciados.");
+      if (navMode === "movies") {
+
+        if (!currentVideoId) {
+          alert("No hay ninguna película en reproducción.");
+          return;
+        }
+
+        // 🔥 Extraer nombre limpio
+        const movieName = currentVideoId
+          .split("/")
+          .pop()
+          .replace(".mp4", "");
+
+        const confirmReset = confirm(
+          `¿Volver a empezar "${movieName}" desde el principio?`
+        );
+
+        if (confirmReset) {
+
+          localStorage.removeItem(
+            getContentKey(currentVideoId)
+          );
+
+          player.pause();
+          player.currentTime = 0;
+
+          alert("Película reiniciada.");
+          renderSeries();
+        }
+
       }
+
+      else {
+
+        const confirmReset = confirm(
+          `¿Reiniciar tiempos de reproducción de "${currentSerie}"?`
+        );
+
+        if (confirmReset) {
+
+          Object.keys(libraryData[currentSerie].seasons).forEach(season => {
+            resetSeasonProgress(currentSerie, season);
+          });
+
+          alert("Tiempos reiniciados.");
+          renderSeries();
+        }
+
+      }
+
     };
+
+
 
     header.appendChild(back);
     header.appendChild(menu);
@@ -292,7 +364,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const serieName = parts[1];
         const filename = parts[parts.length - 1];
 
-        // Extraer SxxExx del nombre del archivo
         const match = filename.match(/S(\d{2})E(\d{2})/i);
 
         let episodeLabel = filename;
@@ -304,26 +375,53 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         row.textContent = `📺 ${serieName} — ${episodeLabel} (${percent}%)`;
-
       }
 
+      // 🔥 AQUÍ VA TODA LA LÓGICA
       row.onclick = () => {
 
-        currentVideoId = item.id;
-        navMode = item.type === "movie" ? "movies" : "episodes";
+        if (item.type === "movie") {
 
-        player.src = `/media/${item.id}`;
-        player.load();
-        player.currentTime = item.progress || 0;
-        player.play();
+          navMode = "movies";
+          currentVideoId = item.id;
+
+          player.src = `/media/${item.id}`;
+          player.load();
+          player.currentTime = item.progress || 0;
+          player.play();
+
+        } else {
+
+          const parts = item.id.split("/");
+          const serieName = parts[1];
+          const seasonName = parts[2];
+
+          currentSerie = serieName;
+          currentSeason = seasonName;
+          navMode = "episodes";
+
+          // Reconstruir playlist correctamente
+          playlist = libraryData[currentSerie].seasons[currentSeason].map(ep => ({
+            id: ep.path,
+            path: ep.path,
+            title: `${currentSeason} · Episodio ${ep.episode}`
+          }));
+
+          const index = playlist.findIndex(p => p.id === item.id);
+
+          if (index !== -1) {
+            currentIndex = index;
+            playVideoByIndex(index);
+          }
+        }
       };
 
       section.appendChild(row);
-
     });
 
     videoList.appendChild(section);
   }
+
 
 
 
@@ -456,13 +554,14 @@ document.addEventListener("DOMContentLoaded", () => {
         li.classList.add("playing");
         lastWatchedElement = li; // 👈 también scrollea el actual
       }
-      else if (savedIndex !== null && index === Number(savedIndex)) {
-        li.classList.add("last-watched");
-        lastWatchedElement = li; // 👈 guardamos referencia
+
+      else {
+        const state = getContentState(video.id);
+        if (state && state.completed) {
+          li.classList.add("completed");
+        }
       }
-      else if (savedIndex !== null && index < Number(savedIndex)) {
-        li.classList.add("completed");
-      }
+
 
       li.onclick = () => playVideoByIndex(index);
       container.appendChild(li);
@@ -502,9 +601,10 @@ document.addEventListener("DOMContentLoaded", () => {
     player.load();
 
     const state = getContentState(currentVideoId);
-    if (state && state.progress) {
+    if (state && state.progress !== undefined && state.progress !== null) {
       player.currentTime = state.progress;
     }
+
 
 
     player.play();
@@ -603,9 +703,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.getElementById("restart-btn").onclick = () => {
       clearAuto();
+
+      resetSeasonProgress(currentSerie, currentSeason);
+
       document.body.removeChild(overlay);
-      playVideoByIndex(0);
+
+      renderSeasons(); // volver al listado de temporadas
     };
+
+
+
+
 
     document.getElementById("random-btn").onclick = () => {
       clearAuto();
@@ -642,7 +750,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const now = Date.now();
 
     // Guardar progreso cada 5 segundos
-    if (remaining > 1 && now - lastProgressSave > 5000) {
+    if (
+      remaining > 1 &&
+      now - lastProgressSave > 5000 &&
+      player.currentTime > 3
+    ) {
 
       const existing = getContentState(currentVideoId) || {
         type: navMode === "movies" ? "movie" : "episode",
